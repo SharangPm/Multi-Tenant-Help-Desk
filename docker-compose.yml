@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-resolvedesk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resolvedesk}
+      POSTGRES_DB: ${POSTGRES_DB:-resolvedesk}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build: ./backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://$${POSTGRES_USER:-resolvedesk}:$${POSTGRES_PASSWORD:-resolvedesk}@postgres:5432/$${POSTGRES_DB:-resolvedesk}?schema=public"
+      REDIS_URL: redis://redis:6379
+      CLIENT_ORIGIN: http://localhost:5173
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    command: npm run worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://$${POSTGRES_USER:-resolvedesk}:$${POSTGRES_PASSWORD:-resolvedesk}@postgres:5432/$${POSTGRES_DB:-resolvedesk}?schema=public"
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
